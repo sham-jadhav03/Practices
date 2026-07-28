@@ -1,180 +1,217 @@
-import { response } from "express";
+import { Octokit } from "@octokit/rest";
 import { config } from "../config/config.js";
-import axios from "axios";
 
 /**
  * Interfaces
  */
-
-export interface RepoInfo {
+export interface RepoMeta {
   owner: string;
   repo: string;
 }
 
-export interface GitTreeItem {
+export interface TreeNode {
   path: string;
-  mode: string;
   type: "blob" | "tree";
   sha: string;
   size?: number;
-  url: string;
 }
 
-export interface GitTreeResponse {
-  owner: string;
-  repo: string;
-  branch: string;
-  tree: GitTreeItem[];
-}
-
-export interface GitHubRepoMetadata {
-  default_branch: string;
-}
-
-export interface GitHubContentResponse {
+export interface FileContent {
   type: "file" | "dir";
   content: string;
 }
 
-export interface FileResult {
-  filePath: string;
-  content: string | null;
-  success: boolean;
-}
+const Skip_Dirs = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  ".git",
+  "coverage",
+  ".next",
+  "out",
+  "__pycache__",
+  ".vscode",
+  "vendor",
+]);
 
+const Source_Extensions = new Set([
+  ".js",
+  ".ts",
+  ".jsx",
+  ".tsx",
+  ".py",
+  ".java",
+]);
+
+const Entry_Candidates = [
+  "server.js",
+  "server.ts",
+  "index.js",
+  "index.ts",
+  "main.js",
+  "main.ts",
+  "app.js",
+  "app.ts",
+  "main.py",
+  "app.py",
+  "Main.java",
+];
+
+const MAX_FILES = 60; // Batch limit for M3 dependency mapping
+const BATCH_SIZE = 5; // Parallel requests per batch
+const RATE_DELAY_MS = 100; // Pause between batches to respect rate limits
+
+const octokit = new Octokit({
+  auth: config.GITHUB_TOKEN || undefined,
+});
 /**
  * Extract owner and repo name from a GitHub URL
  */
 
-export const parseRepoUrl = (repoUrl: string): RepoInfo => {
-  if (!repoUrl) {
+export const parseRepoUrl = (url: string): RepoMeta => {
+  if (!url) {
     throw new Error("Repository Url is required");
   }
 
-  const cleanUrl = repoUrl
-    .trim()
-    .replace(/\.git$/, "")
-    .replace(/\/$/, "");
-
-  const parts = cleanUrl.split("/");
-
-  const repo = parts.pop();
-  const owner = parts.pop();
-
-  if (!owner || repo) {
-    throw new Error("Invalid GitHub repository URL format");
+  const match = url.match(/github\.com\/([^/]+)\/([^/]+)/);
+  if (!match) {
+    throw new Error(`Invalid GitHub repository URL: ${url}`);
   }
-
-  return { owner, repo };
-};
-
-/**GitHub request header */
-
-const getHeader = (): Record<string, string> => {
-  const headers = (Record<string, string> = {
-    Accept: "application/vnd.github.v3+json",
-  });
-
-  if (config.GITHUB_TOKEN) {
-    headers.Authorization = `Beare ${config.GITHUB_TOKEN}`;
-  }
-
-  return headers;
-};
-
-/**
- * Get repository default branch
- */
-
-const getDefaultBranch = async (
-  owner: string,
-  repo: string,
-): Promise<string> => {
-  try {
-    const url = `https://api.github.com/repos/${owner}/${repo}`;
-
-    const reponse = await axios.get<GitHubRepoMetadata>(url, {
-      headers: getHeader(),
-    });
-
-    return reponse.data.default_branch ?? "main";
-  } catch (error) {
-    console.error(error);
-  }
-
-  return "main";
-};
-
-/**
- * Fetch repo tree
- */
-
-export const getTree = async (repoUrl: string): Promise<GitTreeResponse> => {
-  const { owner, repo } = parseRepoUrl(repoUrl);
-  const branch = await getDefaultBranch(owner, repo);
-
-  const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`;
-
-  const reponse = await axios.get<{ tree: GitTreeItem[] }>(url, {
-    headers: getHeader(),
-  });
-
-  const ignorePatterns = [
-    "node_modules/",
-    ".git/",
-    "dist/",
-    "build/",
-    "coverage/",
-    "package-lock.json",
-    "yarn.lock",
-    "pnpm-lock.yaml",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".svg",
-    ".ico",
-    ".pdf",
-    ".zip",
-  ];
-
-  const filteredTree = response.data.tree.filter(
-    (item: GitTreeItem) => 
-        !ignorePatterns.some((pattern)=> item.path.includes(pattern))
-  );
 
   return {
-    owner,
-    repo,
-    branch,
-    tree: filteredTree,
+    owner: match[1],
+    repo: match[2].replace(/\.git$/, "").replace(/\/$/, ""),
   };
 };
 
-/**
- * Fetch a single file
- */
+const shouldSkip = (path: string): boolean => {
+  const split = path.split("/").some((seg) => Skip_Dirs.has(seg));
+  return split;
+};
 
-export const getfile = async (
-    repoUrl: string,
-    filePath: string
-): Promise<string> => {
-    const {owner, repo} = parseRepoUrl(repoUrl);
-    
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath}`;
+const isSourceFile = (path: string): boolean => {
+  const ext = "." + path.split(".").pop()!.toLowerCase();
+  return Source_Extensions.has(ext);
+};
 
-    const response = await axios.get<GitHubContentResponse>(url, {
-        headers: getHeader(),
-    })
+const sleep = (ms: number): Promise<void> => {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+};
 
-    if(response.data.type !== "file") {
-        throw new Error(`Path '${filePath} is a directory, not a file.'`);
+export const getRepoTree = async (meta: RepoMeta): Promise<TreeNode[]> => {
+  try {
+    const { data } = await octokit.git.getTree({
+      owner: meta.owner,
+      repo: meta.repo,
+      tree_sha: "HEAD", //default branch
+      recursive: "1",
+    });
+
+    if (data.truncated) {
+      console.warn(
+        "[GitHub Service] Tree trucated by GitHub - reposistory is very large.",
+      );
+    }
+    const reponse = (data.tree as TreeNode[]).filter(
+      (node) => node.path && !shouldSkip(node.path),
+    );
+
+    return reponse;
+  } catch (error: any) {
+    console.error(
+      `[GitHub Service] Error fetching tree for ${meta.owner}/${meta.repo}:`,
+      error.message,
+    );
+    throw new Error(`Failed to fetch repo tree: ${error.message}`);
+  }
+};
+
+export const filterDirs = (tree: TreeNode[]): TreeNode[] => {
+  const Filter = tree.filter((node) => node.type === "tree");
+  return Filter;
+};
+
+export const detectEntryCandidates = (tree: TreeNode[]): string[] => {
+  const files = tree
+    .filter((node) => node.type == "blob")
+    .map((node) => node.path);
+
+  const rootMatches = files.filter(
+    (f) => Entry_Candidates.includes(f.split("/").pop()!) && !f.includes("/"),
+  );
+
+  if (rootMatches.length > 0) {
+    return rootMatches;
+  }
+
+  const fallback = files.filter((f) =>
+    Entry_Candidates.includes(f.split("/").pop()!),
+  );
+
+  return fallback;
+};
+
+export const getFileContent = async (
+  meta: RepoMeta,
+  path: string
+): Promise<FileContent> => {
+  try {
+    const { data } = await octokit.repos.getContent({
+      owner: meta.owner,
+      repo: meta.repo,
+      path,
+    });
+
+    if (Array.isArray(data) || data.type !== "file") {
+      throw new Error(`Path '${path}' is a directory, not a file`);
     }
 
-    return Buffer.from(response.data.content, "base64").toString("utf8");
+    return {
+      path,
+      content: Buffer.from(data.content, "base64").toString("utf-8"),
+    };
+  } catch (error: any) {
+    throw new Error(`Failed to fetch file '${path}': ${error.message}`);
+  }
+};
+
+
+export const getSourceFiles = (meta: RepoMeta, tree: TreeNode[]): Promise<FileContent[]> => {
+  const candidatePaths = tree.filter((n) => n.type === "blob" && isSourceFile(n.path!));
+
+  const result: FileContent[] = [];
+  
+  for(let i = 0; i< candidatePaths.length; i += BATCH_SIZE){
+    const batch = candidatePaths.slice(i, i + BATCH_SIZE);
+
+    const batchPromises = batch.map(async (path) => {
+      try {
+        return await.getFileContent(meta, path);
+      } catch (err: any) {
+        console.warn(`[GitHub Service] Skipped reading '${path}':`, err.message);
+        return null;
+      }
+    });
+
+    const batchResults = await Promise.all(batchPromises);
+    batchResults.forEach((file) => {
+      if(file) result.push(file)
+    });
+
+    if(i + BATCH_SIZE < candidatePaths.length){
+      await sleep(RATE_DELAY_MS);
+    }
+  }
+  return result;
 }
 
-/**
- * Fetch multiple files
- */
+export const githubService = {
+  parseRepoUrl,
+  getRepoTree,
+  filterDirs,
+  detectEntryCandidates,
+  getFileContent,
+  getSourceFiles,
+};
 
-export const getMultipleFiles = 
+export default githubService;
