@@ -17,8 +17,9 @@ export interface TreeNode {
 }
 
 export interface FileContent {
-  type: "file" | "dir";
+  // type: "file" | "dir";
   content: string;
+  path: string;
 }
 
 const Skip_Dirs = new Set([
@@ -153,7 +154,7 @@ export const detectEntryCandidates = (tree: TreeNode[]): string[] => {
 
 export const getFileContent = async (
   meta: RepoMeta,
-  path: string
+  path: string,
 ): Promise<FileContent> => {
   try {
     const { data } = await octokit.repos.getContent({
@@ -175,35 +176,42 @@ export const getFileContent = async (
   }
 };
 
+export const getSourceFiles = async (
+  meta: RepoMeta,
+  tree: TreeNode[],
+): Promise<FileContent[]> => {
+  const candidatePaths = tree.filter(
+    (n) => n.type === "blob" && isSourceFile(n.path!),
+  );
 
-export const getSourceFiles = (meta: RepoMeta, tree: TreeNode[]): Promise<FileContent[]> => {
-  const candidatePaths = tree.filter((n) => n.type === "blob" && isSourceFile(n.path!));
+  const results: FileContent[] = [];
 
-  const result: FileContent[] = [];
-  
-  for(let i = 0; i< candidatePaths.length; i += BATCH_SIZE){
+  for (let i = 0; i < candidatePaths.length; i += BATCH_SIZE) {
     const batch = candidatePaths.slice(i, i + BATCH_SIZE);
 
     const batchPromises = batch.map(async (path) => {
       try {
-        return await.getFileContent(meta, path);
+        return await getFileContent(meta, path);
       } catch (err: any) {
-        console.warn(`[GitHub Service] Skipped reading '${path}':`, err.message);
+        console.warn(
+          `[GitHub Service] Skipped reading '${path}':`,
+          err.message,
+        );
         return null;
       }
     });
 
     const batchResults = await Promise.all(batchPromises);
     batchResults.forEach((file) => {
-      if(file) result.push(file)
+      if (file) results.push(file);
     });
 
-    if(i + BATCH_SIZE < candidatePaths.length){
+    if (i + BATCH_SIZE < candidatePaths.length) {
       await sleep(RATE_DELAY_MS);
     }
   }
-  return result;
-}
+  return results;
+};
 
 export const githubService = {
   parseRepoUrl,
