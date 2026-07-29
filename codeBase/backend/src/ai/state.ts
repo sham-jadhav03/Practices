@@ -5,6 +5,7 @@ import type {
   IEntryPoint,
   IFolderEntry,
 } from "../models/repoAnalysis.model.js";
+import { CombinedOutput } from "./nodes/combine.node.js";
 
 export interface IM3Result {
   graph: IDependencyNode[];
@@ -28,6 +29,11 @@ export const GraphState = Annotation.Root({
   }),
 
   m3Result: Annotation<IM3Result | null>({
+    reducer: (_, next) => next,
+    default: () => null,
+  }),
+
+  combined: Annotation<CombinedOutput | null>({
     reducer: (_, next) => next,
     default: () => null,
   }),
