@@ -38,14 +38,19 @@ export interface GraphRunResult {
 
 export const runAnalysisGraph = async (
   parsedRepo: ParsedRepo,
+  entryCandidates: string[],
+  entryContents: Array<{ path: string; content: string }>,
 ): Promise<GraphRunResult> => {
   try {
     const finalState = await analysisGraph.invoke({
       parsedRepo,
+      entryCandidates,
+      entryContents,
       m1Result: null,
       m2Result: null,
       m3Result: null,
       errors: [],
+      combined: null,
     });
 
     const combined = (finalState as any).combined as CombinedOutput;

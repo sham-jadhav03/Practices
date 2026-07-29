@@ -1,6 +1,7 @@
 import express, { Request, Response } from "express";
 import cors from "cors"
 import morgan from "morgan";
+import analysisRouter from "./routes/repoAnalysis.route.js"
 
 const app = express()
 
@@ -10,14 +11,9 @@ app.use(morgan("dev"))
 app.use(cors())
 
 app.get("/", async(req: Request, res: Response): Promise<any> =>{
-    const {owner, repo, branch} = req.query;
-
-    if(!owner || !repo || !branch){
-        return res.status(400).json({message:"Missing required parameters"});
-    }
-
-    
-    
+    res.send("Hello from server")
 })
+
+app.use("/api/analysis", analysisRouter);
 
 export default app;

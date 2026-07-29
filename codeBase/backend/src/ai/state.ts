@@ -42,6 +42,16 @@ export const GraphState = Annotation.Root({
     reducer: (prev, next) => [...prev, ...next],
     default: () => [],
   }),
+
+  entryCandidates: Annotation<string[]>({
+    reducer: (_, next) => next,
+    default: () => [],
+  }),
+
+  entryContents: Annotation<Array<{ path: string; content: string }>>({
+    reducer: (_, next) => next,
+    default: () => [],
+  }),
 });
 
 export type GraphStateType = typeof GraphState.State;

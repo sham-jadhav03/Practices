@@ -1,4 +1,4 @@
-import { boolean } from "zod";
+import { EnrichedParsedRepo } from "../../services/ai.service.js";
 import { geminiModel } from "../model.js";
 import {
   buildM2UserPrompt,
@@ -28,10 +28,13 @@ export const m2EntryPointNode = async (
 ): Promise<Partial<GraphStateType>> => {
   try {
     const { files, sourcePaths } = state.parsedRepo;
+    const enrichedRepo = state.parsedRepo as EnrichedParsedRepo;
 
-    const candidates = sourcePaths.filter((p) =>
-      ENTRY_CANDIDATES.includes(p.split("/").pop()!),
-    );
+    const candidates = enrichedRepo.entryCandidates?.length
+      ? enrichedRepo.entryCandidates
+      : sourcePaths.filter((p) =>
+          ENTRY_CANDIDATES.includes(p.split("/").pop()!),
+        );
 
     if (!candidates.length) {
       return {
@@ -43,12 +46,16 @@ export const m2EntryPointNode = async (
         errors: ["\n[m2] No entry candidates found"],
       };
     }
-    const entryContents = candidates
-      .map((path) => {
-        const parsed = files.find((f) => f.filePath === path);
-        return parsed ? { path, content: parsed.functions.join(", ") } : null;
-      })
-      .filter(Boolean) as Array<{ path: string; content: string }>;
+    const entryContents = enrichedRepo.entryContents?.length
+      ? enrichedRepo.entryContents
+      : (candidates
+          .map((path) => {
+            const parsed = files.find((f) => f.filePath === path);
+            return parsed
+              ? { path, content: parsed.functions.join(", ") }
+              : null;
+          })
+          .filter(Boolean) as Array<{ path: string; content: string }>);
 
     const result = await m2LLM.invoke([
       {
