@@ -1,10 +1,15 @@
 import { IAnalysisResult } from "../../models/repoAnalysis.model.js";
 import { GraphStateType } from "../state.js";
+import {
+  AnalysisError,
+  AnalysisStatus,
+  analysisError,
+} from "../../types/error.js";
 
 export interface CombinedOutput {
-  result: IAnalysisResult;
-  errors: string[];
-  success: boolean;
+  result: IAnalysisResult | null;
+  errors: AnalysisError[];
+  status: AnalysisStatus;
 }
 
 export const combineNode = (
@@ -12,9 +17,40 @@ export const combineNode = (
 ): Partial<GraphStateType> & { combined: CombinedOutput } => {
   const { m1Result, m2Result, m3Result, errors } = state;
 
-  if (!m1Result) errors.push("[Combine] M1 result missing");
-  if (!m2Result) errors.push("[Combine] M2 result missing");
-  if (!m3Result) errors.push("[Combine] M3 result missing");
+  const mergedErrors = [...errors];
+
+  // Explicit semantics: null means the node is unavailable/failed; empty
+  // results mean the node ran successfully but found no relevant data.
+  if (m1Result === null) {
+    mergedErrors.push(
+      analysisError(
+        "COMBINE",
+        "M1_RESULT_MISSING",
+        "M1 folder analysis result is missing.",
+        false,
+      ),
+    );
+  }
+  if (m2Result === null) {
+    mergedErrors.push(
+      analysisError(
+        "COMBINE",
+        "M2_RESULT_MISSING",
+        "M2 entry point analysis result is missing.",
+        false,
+      ),
+    );
+  }
+  if (m3Result === null) {
+    mergedErrors.push(
+      analysisError(
+        "COMBINE",
+        "M3_RESULT_MISSING",
+        "M3 dependency analysis result is missing.",
+        false,
+      ),
+    );
+  }
 
   const result: IAnalysisResult = {
     m1: m1Result ?? [],
@@ -25,11 +61,14 @@ export const combineNode = (
     },
   };
 
+  const status: AnalysisStatus =
+    mergedErrors.length > 0 ? "partial" : "completed";
+
   return {
     combined: {
       result,
-      errors,
-      success: errors.length === 0,
+      errors: mergedErrors,
+      status,
     },
   };
 };

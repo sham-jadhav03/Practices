@@ -32,6 +32,8 @@ Each array item should follow this pattern:
 Example: "server.ts loads environment variables from .env"`;
 
 /**  User prompt builder */
+const MAX_ENTRY_CONTENT_CHARS = 800;
+
 export const buildM2UserPrompt = (
   entryCandidates: string[],
   entryFileContents: Array<{ path: string; content: string }>,
@@ -46,10 +48,14 @@ ${entryFileContents
   .map(
     (f) => `
 --- ${f.path} ---
-${f.content.slice(0, 800)}
+${f.content.slice(0, MAX_ENTRY_CONTENT_CHARS)}
 `,
   )
   .join("\n")}
+
+Note: Some file contents may be labeled "[Metadata only - source content was not fetched]".
+In that case treat the listing (path, language, imports, exports, functions) as metadata,
+NOT as source code, and reason about the entry point from structure alone.
 
 Identify the true entry point and describe its execution flow step by step.
 `;

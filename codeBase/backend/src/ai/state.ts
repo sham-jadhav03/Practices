@@ -5,7 +5,12 @@ import type {
   IEntryPoint,
   IFolderEntry,
 } from "../models/repoAnalysis.model.js";
+import type { AnalysisError } from "../types/error.js";
 import { CombinedOutput } from "./nodes/combine.node.js";
+import {
+  AliasMapping,
+  DEFAULT_PATH_ALIASES,
+} from "../utils/dependencyResolution.js";
 
 export interface IM3Result {
   graph: IDependencyNode[];
@@ -15,7 +20,7 @@ export interface IM3Result {
 export const GraphState = Annotation.Root({
   parsedRepo: Annotation<ParsedRepo>({
     reducer: (_, next) => next,
-    default: () => ({ files: [], sourcePaths: [] }),
+    default: () => ({ files: [], sourcePaths: [], errors: [] }),
   }),
 
   m1Result: Annotation<IFolderEntry[] | null>({
@@ -38,7 +43,7 @@ export const GraphState = Annotation.Root({
     default: () => null,
   }),
 
-  errors: Annotation<string[]>({
+  errors: Annotation<AnalysisError[]>({
     reducer: (prev, next) => [...prev, ...next],
     default: () => [],
   }),
@@ -51,6 +56,11 @@ export const GraphState = Annotation.Root({
   entryContents: Annotation<Array<{ path: string; content: string }>>({
     reducer: (_, next) => next,
     default: () => [],
+  }),
+
+  dependencyAliases: Annotation<AliasMapping[]>({
+    reducer: (_, next) => next,
+    default: () => [...DEFAULT_PATH_ALIASES],
   }),
 });
 

@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import type { AnalysisStage } from "../types/error.js";
 
 /**
  * M1
@@ -37,15 +38,24 @@ export interface IAnalysisResult {
   m3: IDependencyMap;
 }
 
+export interface IAnalysisErrorRecord {
+  stage: AnalysisStage;
+  code: string;
+  message: string;
+  retryable: boolean;
+  context?: Record<string, unknown>;
+}
+
 /**Document */
 export interface IRepoAnalysis extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId | null;
   repoUrl: string;
   repoUrlHash: string;
   jobId: string;
-  status: "waiting" | "active" | "completed" | "failed";
+  status: "waiting" | "active" | "completed" | "partial" | "failed";
   result: IAnalysisResult | null;
   error: string | null;
+  analysisErrors: IAnalysisErrorRecord[];
   createdAt: Date;
   completedAt: Date | null;
 }
@@ -95,6 +105,17 @@ const DependencyNodeSchema = new Schema<IDependencyNode>(
   { _id: false },
 );
 
+const AnalysisErrorSchema = new Schema<IAnalysisErrorRecord>(
+  {
+    stage: { type: String, required: true },
+    code: { type: String, required: true },
+    message: { type: String, required: true },
+    retryable: { type: Boolean, required: true },
+    context: { type: Schema.Types.Mixed },
+  },
+  { _id: false },
+);
+
 const repoAnalysischema = new Schema<IRepoAnalysis>(
   {
     userId: {
@@ -122,7 +143,7 @@ const repoAnalysischema = new Schema<IRepoAnalysis>(
     },
     status: {
       type: String,
-      enum: ["waiting", "active", "completed", "failed"],
+      enum: ["waiting", "active", "completed", "partial", "failed"],
       default: "waiting",
       index: true,
     },
@@ -134,6 +155,10 @@ const repoAnalysischema = new Schema<IRepoAnalysis>(
     error: {
       type: String,
       default: null,
+    },
+    analysisErrors: {
+      type: [AnalysisErrorSchema],
+      default: [],
     },
     completedAt: {
       type: Date,

@@ -1,14 +1,18 @@
-import { M3Model } from "../model.js";
+import { getM3Model } from "../model.js";
 import { GraphStateType } from "../state.js";
 import {
   M3OutputSchema,
   M3_SYSTEM_PROMPT,
   buildM3UserPrompt,
 } from "../prompts/m3Prompt.js";
-
-const MAX_FILES_FOR_LLM = 40; // Token limit safeguard
-
-const m3LLM = M3Model.withStructuredOutput(M3OutputSchema);
+import { config } from "../../config/config.js";
+import {
+  filterInternalImports,
+} from "../../utils/dependencyResolution.js";
+import {
+  analysisError,
+  errorToAnalysisError,
+} from "../../types/error.js";
 
 export const m3DependencyNode = async (
   state: GraphStateType,
@@ -19,15 +23,31 @@ export const m3DependencyNode = async (
     if (!files.length) {
       return {
         m3Result: { graph: [], formattedAscii: "" },
-        errors: ["[M3] No files to map"],
+        errors: [
+          analysisError(
+            "M3",
+            "NO_FILES_TO_MAP",
+            "No files available to map dependencies.",
+            false,
+          ),
+        ],
       };
     }
 
-    // Filter local relative imports
-    const dependencyData = files.slice(0, MAX_FILES_FOR_LLM).map((f) => ({
+    const maxFiles = config.M3_MAX_FILES_FOR_LLM;
+    const aliases = state.dependencyAliases?.length
+      ? state.dependencyAliases
+      : [];
+
+    // Internal dependencies: relative/absolute imports plus imports matching a
+    // known alias (e.g. `@/utils`). External packages are deliberately filtered
+    // out - unknown aliases fail safe instead of inventing dependency edges.
+    const dependencyData = files.slice(0, maxFiles).map((f) => ({
       filePath: f.filePath,
-      imports: f.imports.filter((i) => i.startsWith(".") || i.startsWith("/")),
+      imports: filterInternalImports(f.imports, aliases),
     }));
+
+    const m3LLM = getM3Model().withStructuredOutput(M3OutputSchema);
 
     const result = await m3LLM.invoke([
       { role: "system", content: M3_SYSTEM_PROMPT },
@@ -38,9 +58,21 @@ export const m3DependencyNode = async (
       m3Result: result,
     };
   } catch (err) {
+    console.error(
+      "[M3] Dependency mapping failed:",
+      err instanceof Error ? err.message : err,
+    );
     return {
       m3Result: { graph: [], formattedAscii: "" },
-      errors: [`[M3] ${(err as Error).message}`],
+      errors: [
+        errorToAnalysisError(
+          err,
+          "M3",
+          "DEPENDENCY_ANALYSIS_FAILED",
+          "Dependency mapping failed.",
+          true,
+        ),
+      ],
     };
   }
 };
