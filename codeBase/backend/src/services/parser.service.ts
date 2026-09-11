@@ -1,6 +1,5 @@
 import path from "path";
 import { FileContent } from "./github.service.js";
-import { AnalysisError, analysisError } from "../types/error.js";
 
 export type SupportedLanguauge =
   | "javascript"
@@ -21,7 +20,6 @@ export interface ParsedFile {
 export interface ParsedRepo {
   files: ParsedFile[];
   sourcePaths: string[];
-  errors: AnalysisError[];
 }
 
 const Lang_Map: Record<string, SupportedLanguauge> = {
@@ -170,24 +168,15 @@ const parseSingleFile = (filePath: string, content: string): ParsedFile => {
 
 export const parseRepo = (files: FileContent[]): ParsedRepo => {
   const parsed: ParsedFile[] = [];
-  const errors: AnalysisError[] = [];
 
   for (const file of files) {
     if (!file.content) continue;
     try {
       parsed.push(parseSingleFile(file.path, file.content));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[Parser service] Skipped '${file.path}':`, message);
-      errors.push(
-        analysisError(
-          "PARSE",
-          "FILE_PARSE_FAILED",
-          `Failed to parse '${file.path}'. File was skipped.`,
-          false,
-          { file: file.path },
-          message,
-        ),
+      console.warn(
+        `[Parser service] Skipped '${file.path}':`,
+        (err as Error).message,
       );
     }
   }
@@ -195,7 +184,6 @@ export const parseRepo = (files: FileContent[]): ParsedRepo => {
   return {
     files: parsed,
     sourcePaths: parsed.map((f) => f.filePath),
-    errors,
   };
 };
 

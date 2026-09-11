@@ -6,13 +6,6 @@ import { m3DependencyNode } from "./nodes/m3Dependency.node.js";
 import { CombinedOutput, combineNode } from "./nodes/combine.node.js";
 import { ParsedRepo } from "../services/parser.service.js";
 import { IAnalysisResult } from "../models/repoAnalysis.model.js";
-import { AliasMapping } from "../utils/dependencyResolution.js";
-import {
-  AnalysisError,
-  AnalysisStatus,
-  analysisError,
-  errorToAnalysisError,
-} from "../types/error.js";
 
 const workFlow = new StateGraph(GraphState)
   /** parallel nodes */
@@ -39,76 +32,47 @@ export const analysisGraph = workFlow.compile();
 
 export interface GraphRunResult {
   result: IAnalysisResult | null;
-  errors: AnalysisError[];
-  status: AnalysisStatus;
-}
-
-export interface GraphInput {
-  parsedRepo: ParsedRepo;
-  entryCandidates?: string[];
-  entryContents?: Array<{ path: string; content: string }>;
-  dependencyAliases?: AliasMapping[];
+  errors: string[];
+  success: boolean;
 }
 
 export const runAnalysisGraph = async (
-  input: GraphInput,
+  parsedRepo: ParsedRepo,
+  entryCandidates: string[],
+  entryContents: Array<{ path: string; content: string }>,
 ): Promise<GraphRunResult> => {
   try {
-    // Optional state fields rely on their Annotation defaults; only required
-    // analysis inputs are passed explicitly. `errors: []` guarantees a fresh
-    // error state per run, so earlier runs can never bleed stale errors in
-    // while M1/M2/M3 still append independently during the same run.
     const finalState = await analysisGraph.invoke({
-      parsedRepo: input.parsedRepo,
-      ...(input.entryCandidates?.length
-        ? { entryCandidates: input.entryCandidates }
-        : {}),
-      ...(input.entryContents?.length ? { entryContents: input.entryContents } : {}),
-      ...(input.dependencyAliases?.length
-        ? { dependencyAliases: input.dependencyAliases }
-        : {}),
+      parsedRepo,
+      entryCandidates,
+      entryContents,
+      m1Result: null,
+      m2Result: null,
+      m3Result: null,
       errors: [],
+      combined: null,
     });
 
-    const combined: CombinedOutput | null = finalState.combined;
+    const combined = (finalState as any).combined as CombinedOutput;
 
     if (!combined) {
       return {
         result: null,
-        errors: [
-          analysisError(
-            "COMBINE",
-            "COMBINE_NODE_NO_OUTPUT",
-            "Combine node did not produce an output.",
-            false,
-          ),
-        ],
-        status: "failed",
+        errors: ["[Graph] combine node did not produce output"],
+        success: false,
       };
     }
 
     return {
       result: combined.result,
       errors: combined.errors,
-      status: combined.status,
+      success: combined.success,
     };
   } catch (err) {
-    console.error(
-      "[Graph] Fatal error:",
-      err instanceof Error ? err.message : err,
-    );
     return {
       result: null,
-      errors: [
-        errorToAnalysisError(
-          err,
-          "COMBINE",
-          "GRAPH_FATAL",
-          "The analysis graph failed unexpectedly.",
-          false,
-        ),
-      ],
-      status: "failed",
+      errors: [`[Graph] Fatal: ${(err as Error).message}`],
+      success: false,
     };
   }
 };

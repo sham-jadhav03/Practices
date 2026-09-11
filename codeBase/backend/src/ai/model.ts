@@ -1,26 +1,28 @@
-import { config } from "../config/config.js";
-import { ChatGroq } from "@langchain/groq";
+import { ChatOpenAI } from "@langchain/openai";
+import { config }     from "../config/config.js";
 
-const MODEL_NAME = "llama-3.3-70b-versatile";
+const BASE_URL = "https://integrate.api.nvidia.com/v1";
 
-let m1Model: ChatGroq | null = null;
-let m2Model: ChatGroq | null = null;
-let m3Model: ChatGroq | null = null;
+// M1 — simple folder classification, fast
+export const M1Model = new ChatOpenAI({
+  model:         "nvidia/nemotron-3-nano-30b-a3b",
+  temperature:   0,
+  apiKey:        config.NVIDIA_API_KEY,
+  configuration: { baseURL: BASE_URL },
+});
 
-const createModel = (): ChatGroq => {
-  const apiKey = config.GROQ_API_KEY;
-  if (!apiKey) {
-    throw new Error("GROQ_API_KEY is not configured - AI analysis is unavailable");
-  }
-  return new ChatGroq({
-    model: MODEL_NAME,
-    temperature: 0,
-    apiKey,
-  });
-};
+// M2 — entry point + execution flow reasoning
+export const M2Model = new ChatOpenAI({
+  model:         "nvidia/nemotron-3-super-120b-a12b",
+  temperature:   0,
+  apiKey:        config.NVIDIA_API_KEY,
+  configuration: { baseURL: BASE_URL },
+});
 
-export const getM1Model = (): ChatGroq => (m1Model ??= createModel());
-
-export const getM2Model = (): ChatGroq => (m2Model ??= createModel());
-
-export const getM3Model = (): ChatGroq => (m3Model ??= createModel());
+// M3 — dependency graph, structured JSON output — Nemotron best for this
+export const M3Model = new ChatOpenAI({
+  model:         "nvidia/nemotron-3-super-120b-a12b",
+  temperature:   0,
+  apiKey:        config.NVIDIA_API_KEY,
+  configuration: { baseURL: BASE_URL },
+});

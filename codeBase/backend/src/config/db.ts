@@ -1,33 +1,14 @@
 import mongoose from "mongoose";
 import { config } from "./config.js";
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-const connectDB = async (): Promise<void> => {
-  const maxRetries = config.DB_CONNECT_RETRIES;
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
+const connectDB = async () => {
     try {
-      await mongoose.connect(config.MONGO_URI!, {
-        serverSelectionTimeoutMS: 10000,
-      });
-      console.log("Connected Database");
-      return;
+        await mongoose.connect(`${config.MONGO_URI}`)
+        console.log("Connected Database");
     } catch (error) {
-      lastError = error;
-      console.error(
-        `[DB] MongoDB connection attempt ${attempt}/${maxRetries} failed:`,
-        error instanceof Error ? error.message : error,
-      );
-      if (attempt < maxRetries) {
-        await sleep(2000 * attempt);
-      }
+        console.log("MongoDB Connection Error",error);
+        process.exit(1);
     }
-  }
-
-  throw lastError;
-};
+}
 
 export default connectDB;
