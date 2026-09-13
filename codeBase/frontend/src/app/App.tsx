@@ -1,3 +1,4 @@
+import { AppRouter } from "./AppRouter";
 import "./index.css"
 
 function App() {
@@ -5,7 +6,7 @@ function App() {
 
   return (
     <>
-  
+      <AppRouter />
     </>
   )
 }
