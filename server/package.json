@@ -1,0 +1,21 @@
+{
+  "name": "server",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "^5.0.6",
+    "express": "^5.2.1",
+    "tsx": "^4.23.15"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@types/dotenv": "^8.2.3",
+    "@types/mongoose": "^5.11.97",
+    "@types/nodemon": "^3.1.1",
+    "dotenv": "^18.0.4",
+    "mongoose": "^9.10.2",
+    "nodemon": "^3.1.14"
+  }
+}
